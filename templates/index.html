@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ shop_name }} - Credit Balances</title>
+  <style>
+    :root { --bg:#f4f5f7; --card:#fff; --text:#1d232c; --muted:#69727f; --line:#e2e5ea;
+            --accent:#b4541a; --ok:#1d7a43; --warn:#a15c00; --bad:#b42318; --err-bg:#fdecec; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#12161c; --card:#1b2129; --text:#e8ecf1; --muted:#9aa4b2; --line:#2b333e;
+              --accent:#f08a4b; --ok:#5fd18d; --warn:#f2b45c; --bad:#ff8a80; --err-bg:#3a1e1e; }
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+           background:var(--bg); color:var(--text); line-height:1.5; }
+    main { max-width:560px; margin:0 auto; padding:32px 16px; }
+    h1 { font-size:1.5rem; margin:0; }
+    .sub { color:var(--muted); margin:2px 0 24px; }
+    form { display:flex; gap:8px; margin-bottom:20px; }
+    input { flex:1; min-width:0; padding:12px 14px; font-size:1rem; border:1px solid var(--line);
+            border-radius:10px; background:var(--card); color:var(--text); }
+    input:focus { outline:2px solid var(--accent); outline-offset:1px; }
+    button { padding:12px 20px; font-size:1rem; font-weight:600; border:0; border-radius:10px;
+             background:var(--accent); color:#fff; cursor:pointer; }
+    button:disabled { opacity:.6; cursor:wait; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; }
+    .hidden { display:none !important; }
+    .error { background:var(--err-bg); color:var(--bad); border-color:transparent; }
+    .name { font-weight:700; font-size:1.15rem; margin:0 0 4px; }
+    .amount { font-size:2.2rem; font-weight:700; margin:4px 0 12px; font-variant-numeric:tabular-nums; }
+    .row { display:flex; justify-content:space-between; padding:8px 0; border-top:1px solid var(--line); }
+    .row span:first-child { color:var(--muted); }
+    .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-size:.85rem; font-weight:600; }
+    .cleared { color:var(--ok); } .owing { color:var(--warn); } .near { color:var(--bad); }
+    .hint { color:var(--muted); font-size:.9rem; margin-top:16px; }
+    code { background:var(--card); border:1px solid var(--line); padding:1px 6px; border-radius:6px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>{{ shop_name }}</h1>
+  <p class="sub">{{ shop_location }} · Customer credit balances</p>
+
+  <form id="search" action="/api/balance" method="get">
+    <input id="name" name="name" type="text" placeholder="Customer name, e.g. Kiprop"
+           aria-label="Customer name" autocomplete="off" required>
+    <button id="btn" type="submit">Search</button>
+  </form>
+
+  <div id="loading" class="card hidden" role="status">Loading...</div>
+  <div id="error" class="card error hidden" role="alert"></div>
+  <div id="result" class="card hidden"></div>
+
+  <p class="hint">Developers: the same data is available as JSON at
+    <code>/api/balance?name=Kiprop</code></p>
+</main>
+
+<script>
+  const form = document.getElementById("search");
+  const input = document.getElementById("name");
+  const btn = document.getElementById("btn");
+  const loadingEl = document.getElementById("loading");
+  const errorEl = document.getElementById("error");
+  const resultEl = document.getElementById("result");
+  const kes = (n) => "KES " + Number(n).toLocaleString("en-KE");
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+  function show(which) {
+    [loadingEl, errorEl, resultEl].forEach((el) => el.classList.toggle("hidden", el !== which));
+    btn.disabled = which === loadingEl;
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = input.value.trim();
+    show(loadingEl);
+    try {
+      const response = await fetch("/api/balance?name=" + encodeURIComponent(name));
+      const data = await response.json();
+      if (!response.ok) {
+        let msg = esc(data.error || "Something went wrong.");
+        if (data.matches) msg += "<br>Did you mean: " + data.matches.map(esc).join(", ") + "?";
+        errorEl.innerHTML = msg;
+        show(errorEl);
+        return;
+      }
+      const cls = data.status === "cleared" ? "cleared" : data.status === "near limit" ? "near" : "owing";
+      resultEl.innerHTML = `
+        <p class="name">${esc(data.name)}</p>
+        <span class="badge ${cls}">${esc(data.status)}</span>
+        <p class="amount">${kes(data.balance_kes)}</p>
+        <div class="row"><span>Credit limit</span><span>${kes(data.credit_limit_kes)}</span></div>
+        <div class="row"><span>Available credit</span><span>${kes(data.available_credit_kes)}</span></div>
+        <div class="row"><span>Last payment</span><span>${esc(data.last_payment)}</span></div>`;
+      show(resultEl);
+    } catch {
+      errorEl.textContent = "Couldn't reach the server. Is app.py still running?";
+      show(errorEl);
+    }
+  });
+</script>
+</body>
+</html>
